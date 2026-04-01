@@ -4,7 +4,6 @@ const root = document.documentElement;
 const moonIcon = document.querySelector('.moon-icon');
 const sunIcon = document.querySelector('.sun-icon');
 
-// Check for saved theme preference or system preference
 const savedTheme = localStorage.getItem('theme');
 const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
@@ -27,46 +26,188 @@ themeToggleBtn.addEventListener('click', () => {
         moonIcon.style.display = 'none';
         sunIcon.style.display = 'block';
     }
-    
-    // Optional: Refresh map tiles for dark mode if using a dark tile layer 
-    // Here we're using a single standard tile layer, but this hook allows dynamic tile switching.
 });
 
-
-// Map Data Mapping (Original Nodes -> NY Coordinates)
-const nodes = {
-    "City Hall": { lat: 40.7128, lng: -74.0060 },
-    "Central Park": { lat: 40.7851, lng: -73.9682 },
-    "Main Library": { lat: 40.7532, lng: -73.9822 },
-    "Grand Station": { lat: 40.7527, lng: -73.9772 },
-    "Museum": { lat: 40.7794, lng: -73.9632 },
-    "Airport": { lat: 40.6413, lng: -73.7781 },
-    "School": { lat: 40.8075, lng: -73.9626 }
+// Dynamic Graph State
+let nodes = {
+    "CSMT": { lat: 18.9398, lng: 72.8354 },
+    "Hanging Gardens": { lat: 18.9566, lng: 72.8049 },
+    "Crawford Market": { lat: 18.9458, lng: 72.8336 },
+    "Colaba Causeway": { lat: 18.9189, lng: 72.8286 },
+    "Gateway of India": { lat: 18.9220, lng: 72.8347 },
+    "Marine Drive": { lat: 18.9440, lng: 72.8228 },
+    "Bandra Link": { lat: 19.0354, lng: 72.8176 }
 };
 
-// Original Graph Edges
-const edges = [
-    { source: "City Hall", target: "Main Library", weight: 4.5 },
-    { source: "City Hall", target: "Central Park", weight: 2.8 },
-    { source: "City Hall", target: "School", weight: 6.0 },
-    { source: "Central Park", target: "Grand Station", weight: 3.1 },
-    { source: "Central Park", target: "Museum", weight: 2.0 },
-    { source: "Main Library", target: "Museum", weight: 1.5 },
-    { source: "Grand Station", target: "Airport", weight: 5.2 },
-    { source: "Grand Station", target: "Museum", weight: 2.5 }
+// Instead of hardcoded weights, we just store what connects to what,
+// and the routes array stores the fetched OSRM physical road metadata.
+let edgesList = [
+    { source: "CSMT", target: "Crawford Market" },
+    { source: "CSMT", target: "Hanging Gardens" },
+    { source: "CSMT", target: "Bandra Link" },
+    { source: "Hanging Gardens", target: "Colaba Causeway" },
+    { source: "Hanging Gardens", target: "Gateway of India" },
+    { source: "Crawford Market", target: "Gateway of India" },
+    { source: "Colaba Causeway", target: "Marine Drive" },
+    { source: "Colaba Causeway", target: "Gateway of India" }
 ];
 
-// Build Adjacency List for Dijkstra
-const adjacencyList = {};
-Object.keys(nodes).forEach(node => {
-    adjacencyList[node] = [];
-});
+let globalEdges = [];
+let adjacencyList = {};
 
-edges.forEach(edge => {
-    // Undirected graph
-    adjacencyList[edge.source].push({ node: edge.target, weight: edge.weight });
-    adjacencyList[edge.target].push({ node: edge.source, weight: edge.weight });
-});
+const map = L.map('map-container').setView([18.95, 72.82], 12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+let markers = {};
+let edgeLayers = [];
+let highlightedRouteLayers = [];
+
+// DOM Elements
+const startSelect = document.getElementById('start-node');
+const endSelect = document.getElementById('end-node');
+const roadStart = document.getElementById('road-start');
+const roadEnd = document.getElementById('road-end');
+const removeNodeSelect = document.getElementById('remove-node-select');
+const statusText = document.getElementById('status-text');
+const pathResult = document.getElementById('path-result');
+
+function refreshDropdowns() {
+    [startSelect, endSelect, roadStart, roadEnd, removeNodeSelect].forEach(select => {
+        const currentVal = select.value;
+        const firstOption = select.options[0].cloneNode(true);
+        select.innerHTML = '';
+        select.appendChild(firstOption);
+        
+        Object.keys(nodes).forEach(nodeName => {
+            const opt = document.createElement('option');
+            opt.value = nodeName;
+            opt.textContent = nodeName;
+            select.appendChild(opt);
+        });
+        
+        if (nodes[currentVal]) {
+            select.value = currentVal;
+        } else {
+            select.value = "";
+        }
+    });
+}
+
+function rebuildAdjacencyList() {
+    adjacencyList = {};
+    Object.keys(nodes).forEach(node => {
+        adjacencyList[node] = [];
+    });
+    globalEdges.forEach(e => {
+        if(adjacencyList[e.source] && adjacencyList[e.target]) {
+            adjacencyList[e.source].push({ node: e.target, weight: e.weight, geometry: e.geometry, id: e.id });
+            adjacencyList[e.target].push({ node: e.source, weight: e.weight, geometry: [...e.geometry].reverse(), id: e.id });
+        }
+    });
+}
+
+// Draw a single node
+function drawNode(name) {
+    if (markers[name]) map.removeLayer(markers[name]);
+    const marker = L.marker([nodes[name].lat, nodes[name].lng])
+        .bindPopup(`<b>${name}</b>`)
+        .addTo(map);
+    markers[name] = marker;
+}
+
+// Fetch OSRM Route
+async function fetchRoute(source, target) {
+    const lat1 = nodes[source].lat, lng1 = nodes[source].lng;
+    const lat2 = nodes[target].lat, lng2 = nodes[target].lng;
+    
+    const url = `https://router.project-osrm.org/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?geometries=geojson&overview=full`;
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.code === 'Ok') {
+            const route = data.routes[0];
+            // distance in kilometers
+            const distance = route.distance / 1000;
+            const geojsonCoords = route.geometry.coordinates; // [lng, lat]
+            const latlngs = geojsonCoords.map(coord => [coord[1], coord[0]]);
+            return { distance, latlngs };
+        }
+    } catch (err) {
+        console.error("Route fetch error:", err);
+    }
+    // Fallback: straight line
+    console.warn("Using straight line fallback for", source, target);
+    const dist = getDistanceFromLatLonInKm(lat1, lng1, lat2, lng2);
+    return { distance: dist, latlngs: [[lat1, lng1], [lat2, lng2]] };
+}
+
+// Math util for fallback
+function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+    var R = 6371; // Radius of the earth in km
+    var dLat = (lat2 - lat1) * (Math.PI/180);
+    var dLon = (lon2 - lon1) * (Math.PI/180); 
+    var a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+    var d = R * c; 
+    return d;
+}
+
+function drawEdge(edgeObj) {
+    const polyline = L.polyline(edgeObj.geometry, {
+        color: '#9ca3af', // gray
+        weight: 3,
+        opacity: 0.6,
+        dashArray: '5, 10'
+    }).addTo(map);
+    
+    // Middle point for label
+    const midPointIndex = Math.floor(edgeObj.geometry.length / 2);
+    const midLatLng = edgeObj.geometry[midPointIndex];
+    
+    const tooltip = L.tooltip({
+        permanent: true,
+        direction: 'center',
+        className: 'label-tooltip',
+        opacity: 0.8
+    })
+    .setContent(`${edgeObj.weight.toFixed(1)} km`)
+    .setLatLng(midLatLng)
+    .addTo(map);
+    
+    edgeLayers.push({ id: edgeObj.id, polyline, tooltip });
+}
+
+// Initialize system
+async function initGraph() {
+    refreshDropdowns();
+    Object.keys(nodes).forEach(n => drawNode(n));
+
+    statusText.textContent = "Status: Loading road geometries from OSRM...";
+    let edgeIdCounter = 0;
+
+    for (const edge of edgesList) {
+        if (!nodes[edge.source] || !nodes[edge.target]) continue;
+        const res = await fetchRoute(edge.source, edge.target);
+        const fullEdge = {
+            id: ++edgeIdCounter,
+            source: edge.source,
+            target: edge.target,
+            weight: res.distance,
+            geometry: res.latlngs
+        };
+        globalEdges.push(fullEdge);
+        drawEdge(fullEdge);
+    }
+    rebuildAdjacencyList();
+    statusText.textContent = "Status: Ready.";
+}
+
+initGraph();
+
 
 // Priority Queue for Dijkstra
 class PriorityQueue {
@@ -90,25 +231,20 @@ class PriorityQueue {
             }
         }
     }
-    dequeue() {
-        let value = this.collection.shift();
-        return value;
-    }
-    isEmpty() {
-        return (this.collection.length === 0);
-    }
+    dequeue() { return this.collection.shift(); }
+    isEmpty() { return this.collection.length === 0; }
 }
 
-// Dijkstra's Algorithm implementation
 function findShortestPath(startNode, endNode) {
     let distances = {};
     let backtrace = {};
+    let geometries = {}; 
     let pq = new PriorityQueue();
 
-    // Initialization
     Object.keys(adjacencyList).forEach(node => {
         distances[node] = Infinity;
         backtrace[node] = null;
+        geometries[node] = null;
     });
 
     distances[startNode] = 0;
@@ -117,118 +253,150 @@ function findShortestPath(startNode, endNode) {
     while (!pq.isEmpty()) {
         let shortestStep = pq.dequeue();
         let currentNode = shortestStep[0];
-        let currentWeight = shortestStep[1];
 
-        // Process neighbors
         adjacencyList[currentNode].forEach(neighbor => {
             let candidateWeight = distances[currentNode] + neighbor.weight;
-            
             if (candidateWeight < distances[neighbor.node]) {
                 distances[neighbor.node] = candidateWeight;
                 backtrace[neighbor.node] = currentNode;
+                geometries[neighbor.node] = neighbor.geometry; // store path geometry
                 pq.enqueue([neighbor.node, candidateWeight]);
             }
         });
     }
 
-    // Path reconstruction
-    let path = [endNode];
+    let pathNodes = [endNode];
+    let pathGeometries = [];
     let lastStep = endNode;
 
     while (lastStep !== startNode) {
-        // If there's no path
-        if (!backtrace[lastStep]) {
-            return { path: null, distance: Infinity };
-        }
-        path.unshift(backtrace[lastStep]);
+        if (!backtrace[lastStep]) return { path: null, distance: Infinity };
+        pathGeometries.unshift(geometries[lastStep]);
         lastStep = backtrace[lastStep];
+        pathNodes.unshift(lastStep);
     }
 
-    return { path: path, distance: distances[endNode] };
+    // Collapse all tiny geometries into one fluid line
+    const fullPathLatLngs = [];
+    pathGeometries.forEach(geom => {
+        fullPathLatLngs.push(...geom);
+    });
+
+    return { path: pathNodes, distance: distances[endNode], fullGeometry: fullPathLatLngs };
 }
 
-// Initialize Leaflet Map
-const map = L.map('map-container').setView([40.75, -73.97], 11);
+// ----------------- UX Interactions -----------------
+let addPointMode = false;
+const toggleAddPointBtn = document.getElementById('toggle-add-point-btn');
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-}).addTo(map);
-
-// Add Markers and populate Select Dropdowns
-const startSelect = document.getElementById('start-node');
-const endSelect = document.getElementById('end-node');
-const markers = {};
-
-Object.keys(nodes).forEach(nodeName => {
-    // Add marker
-    const marker = L.marker([nodes[nodeName].lat, nodes[nodeName].lng])
-        .bindPopup(`<b>${nodeName}</b>`)
-        .addTo(map);
-    markers[nodeName] = marker;
-
-    // Add options to dropdowns
-    const option1 = document.createElement('option');
-    option1.value = nodeName;
-    option1.textContent = nodeName;
-    startSelect.appendChild(option1);
-
-    const option2 = document.createElement('option');
-    option2.value = nodeName;
-    option2.textContent = nodeName;
-    endSelect.appendChild(option2);
+toggleAddPointBtn.addEventListener('click', () => {
+    addPointMode = !addPointMode;
+    if (addPointMode) {
+        toggleAddPointBtn.classList.add('active-btn');
+        toggleAddPointBtn.textContent = '📍 Add Point mode: ON (Click map)';
+        document.getElementById('map-container').style.cursor = 'crosshair';
+    } else {
+        toggleAddPointBtn.classList.remove('active-btn');
+        toggleAddPointBtn.textContent = '📍 Add Point mode: OFF';
+        document.getElementById('map-container').style.cursor = '';
+    }
 });
 
-// Draw Static Edges
-const staticEdgeLayers = [];
-edges.forEach(edge => {
-    const p1 = [nodes[edge.source].lat, nodes[edge.source].lng];
-    const p2 = [nodes[edge.target].lat, nodes[edge.target].lng];
+map.on('click', (e) => {
+    if (!addPointMode) return;
+    const name = prompt("Enter a name for this new location:");
+    if (!name || name.trim() === '') {
+        alert("Location name cannot be empty.");
+        return;
+    }
+    if (nodes[name]) {
+        alert("A location with this name already exists.");
+        return;
+    }
     
-    // Draw polyline
-    const polyline = L.polyline([p1, p2], {
-        color: '#9ca3af', // gray
-        weight: 3,
-        opacity: 0.6,
-        dashArray: '5, 10'
-    }).addTo(map);
+    nodes[name] = { lat: e.latlng.lat, lng: e.latlng.lng };
+    drawNode(name);
+    refreshDropdowns();
+    rebuildAdjacencyList();
     
-    staticEdgeLayers.push(polyline);
-    
-    // Calculate midpoint to place distance label
-    const midLat = (p1[0] + p2[0]) / 2;
-    const midLng = (p1[1] + p2[1]) / 2;
-    
-    // Add small text label for weight
-    L.tooltip({
-        permanent: true,
-        direction: 'center',
-        className: 'label-tooltip',
-        opacity: 0.8
-    })
-    .setContent(edge.weight.toString())
-    .setLatLng([midLat, midLng])
-    .addTo(map);
+    // turn off mode automatically
+    toggleAddPointBtn.click();
+    statusText.textContent = `Status: Added node '${name}'.`;
 });
 
-// Interactivity logic
-let highlightedRoute = null;
+document.getElementById('add-road-btn').addEventListener('click', async () => {
+    const s = roadStart.value;
+    const t = roadEnd.value;
+    if(!s || !t) return alert("Select From and To nodes for the new road.");
+    if(s === t) return alert("Cannot connect a node to itself.");
+    
+    // check if exists
+    if (globalEdges.find(e => (e.source === s && e.target === t) || (e.source === t && e.target === s))) {
+        return alert("Road already exists between these points.");
+    }
+    
+    document.getElementById('add-road-btn').disabled = true;
+    statusText.textContent = "Status: Fetching actual road path from OSRM...";
+    
+    const res = await fetchRoute(s, t);
+    const newEdge = { id: Date.now(), source: s, target: t, weight: res.distance, geometry: res.latlngs };
+    
+    globalEdges.push(newEdge);
+    drawEdge(newEdge);
+    rebuildAdjacencyList();
+    
+    statusText.textContent = `Status: Added road ${s} <-> ${t} (${res.distance.toFixed(2)} km).`;
+    document.getElementById('add-road-btn').disabled = false;
+});
 
+document.getElementById('remove-node-btn').addEventListener('click', () => {
+    const removeMe = removeNodeSelect.value;
+    if (!removeMe) return;
+    
+    if(!confirm(`Are you sure you want to delete ${removeMe}? All connected roads will vanish.`)) return;
+
+    // Remove node
+    delete nodes[removeMe];
+    if (markers[removeMe]) {
+        map.removeLayer(markers[removeMe]);
+        delete markers[removeMe];
+    }
+    
+    // Remove edges connected
+    const toKeep = [];
+    globalEdges.forEach(e => {
+        if (e.source === removeMe || e.target === removeMe) {
+            // Find in edgelayers and remove visual
+            const idx = edgeLayers.findIndex(el => el.id === e.id);
+            if(idx > -1) {
+                map.removeLayer(edgeLayers[idx].polyline);
+                map.removeLayer(edgeLayers[idx].tooltip);
+                edgeLayers.splice(idx, 1);
+            }
+        } else {
+            toKeep.push(e);
+        }
+    });
+    globalEdges = toKeep;
+    
+    clearMap(); 
+    refreshDropdowns();
+    rebuildAdjacencyList();
+    statusText.textContent = `Status: Removed node '${removeMe}'.`;
+});
+
+
+// ----------------- Path Finding ----------------------
 const findRouteBtn = document.getElementById('find-path-btn');
 const clearRouteBtn = document.getElementById('clear-path-btn');
-const statusText = document.getElementById('status-text');
-const pathResult = document.getElementById('path-result');
 
 function clearMap() {
-    if (highlightedRoute) {
-        map.removeLayer(highlightedRoute);
-        highlightedRoute = null;
-    }
+    highlightedRouteLayers.forEach(l => map.removeLayer(l));
+    highlightedRouteLayers = [];
     startSelect.value = '';
     endSelect.value = '';
     statusText.textContent = 'Status: Ready.';
     pathResult.innerHTML = '';
-    map.setView([40.75, -73.97], 11);
 }
 
 findRouteBtn.addEventListener('click', () => {
@@ -240,40 +408,30 @@ findRouteBtn.addEventListener('click', () => {
         pathResult.innerHTML = '<span style="color: red;">Please select both start and destination locations.</span>';
         return;
     }
+    if (start === end) return;
 
-    if (start === end) {
-        statusText.textContent = 'Status: Info';
-        pathResult.innerHTML = `<span>Start and destination are the same (${start}).</span>`;
-        return;
-    }
-
-    // Remove previous route if exists
-    if (highlightedRoute) {
-        map.removeLayer(highlightedRoute);
-    }
+    // Clear previous
+    highlightedRouteLayers.forEach(l => map.removeLayer(l));
+    highlightedRouteLayers = [];
 
     const result = findShortestPath(start, end);
 
     if (result.path) {
-        statusText.textContent = `Status: Success (Total Distance: ${result.distance.toFixed(1)})`;
+        statusText.textContent = `Status: Success (Total Route: ${result.distance.toFixed(2)} km)`;
         pathResult.innerHTML = `<strong>Path:</strong> <br/> ${result.path.join(' ➔ ')}`;
 
-        // Draw new route
-        const latlngs = result.path.map(node => [nodes[node].lat, nodes[node].lng]);
-        
-        // CSS custom property retrieval for route color
         const computedStyle = getComputedStyle(document.documentElement);
         let routeColor = computedStyle.getPropertyValue('--map-route-color').trim() || '#ef4444';
         
-        highlightedRoute = L.polyline(latlngs, {
+        const boldLine = L.polyline(result.fullGeometry, {
             color: routeColor,
-            weight: 6,
+            weight: 7,
             opacity: 0.9,
             lineJoin: 'round'
         }).addTo(map);
 
-        // Fit map bounds to show full route with some padding
-        map.fitBounds(highlightedRoute.getBounds(), { padding: [50, 50] });
+        highlightedRouteLayers.push(boldLine);
+        map.fitBounds(boldLine.getBounds(), { padding: [50, 50] });
 
     } else {
         statusText.textContent = 'Status: Error';
@@ -288,16 +446,12 @@ const style = document.createElement('style');
 style.innerHTML = `
     .label-tooltip {
         background: rgba(255, 255, 255, 0.9);
-        border: 1px solid #ccc;
+        border: 1px solid var(--border-color);
         border-radius: 4px;
         font-size: 10px;
         padding: 2px 4px;
+        color: #000;
         box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-    }
-    [data-theme="dark"] .label-tooltip {
-        background: rgba(31, 41, 55, 0.9);
-        border-color: #4b5563;
-        color: #f9fafb;
     }
 `;
 document.head.appendChild(style);

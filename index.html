@@ -1,22 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Path Finder | Interactive City Map</title>
-    <meta name="description" content="An interactive web application showcasing Dijkstra's Shortest Path algorithm on a real geographic map.">
-    
+    <meta name="description"
+        content="An interactive web application showcasing Dijkstra's Shortest Path algorithm on a real geographic map.">
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    
+
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
     <!-- Custom CSS -->
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <!-- Navigation Area -->
     <nav class="navbar">
@@ -30,8 +34,24 @@
                 <!-- Theme Toggle Button -->
                 <li>
                     <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle Dark Mode">
-                        <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-                        <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                        <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                        </svg>
+                        <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                            <circle cx="12" cy="12" r="5"></circle>
+                            <line x1="12" y1="1" x2="12" y2="3"></line>
+                            <line x1="12" y1="21" x2="12" y2="23"></line>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                            <line x1="1" y1="12" x2="3" y2="12"></line>
+                            <line x1="21" y1="12" x2="23" y2="12"></line>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                        </svg>
                     </button>
                 </li>
             </ul>
@@ -42,7 +62,8 @@
     <section id="hero" class="hero">
         <div class="hero-content">
             <h2 class="hero-title">Navigate Your City Smartly.</h2>
-            <p class="hero-subtitle">Experience lightning-fast shortest path computation using Dijkstra's algorithm mapped onto real geographic data.</p>
+            <p class="hero-subtitle">Experience lightning-fast shortest path computation using Dijkstra's algorithm
+                mapped onto real geographic data.</p>
             <a href="#demo" class="cta-button">Try the Demo</a>
         </div>
     </section>
@@ -51,7 +72,10 @@
     <section id="about" class="about">
         <div class="section-container">
             <h2>About The Project</h2>
-            <p>What started as a desktop graph-based navigator Python application is now a modern, web-ready portfolio project. PathFinder takes complex graph theory—specifically Dijkstra's Algorithm—and applies it to a real-world map visualization. It completely runs statically in the browser, providing quick responses without needing a backend server.</p>
+            <p>What started as a desktop graph-based navigator Python application is now a modern, web-ready portfolio
+                project. PathFinder takes complex graph theory—specifically Dijkstra's Algorithm—and applies it to a
+                real-world map visualization. It completely runs statically in the browser, providing quick responses
+                without needing a backend server.</p>
         </div>
     </section>
 
@@ -64,7 +88,7 @@
             <div class="app-layout">
                 <!-- Controls Sidebar -->
                 <div class="controls-panel">
-                    <h3>Controls</h3>
+                    <h3>Find Path</h3>
                     <div class="form-group">
                         <label for="start-node">Start Location:</label>
                         <select id="start-node">
@@ -83,12 +107,46 @@
 
                     <div class="button-group">
                         <button id="find-path-btn" class="primary-btn">Find Route</button>
-                        <button id="clear-path-btn" class="secondary-btn">Clear Map</button>
+                        <button id="clear-path-btn" class="secondary-btn">Clear Route</button>
                     </div>
 
                     <div id="status-panel" class="status-panel">
                         <p id="status-text">Status: Ready.</p>
                         <div id="path-result" class="path-result"></div>
+                    </div>
+
+                    <hr class="separator" />
+
+                    <h3>Edit Map Data</h3>
+
+                    <div class="button-group">
+                        <button id="toggle-add-point-btn" class="secondary-btn"
+                            title="Click this, then click on the map to add a point">
+                            📍 Add Point mode: OFF
+                        </button>
+                    </div>
+
+                    <div class="form-group mt-1">
+                        <label>Add Road Between:</label>
+                        <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+                            <select id="road-start" style="flex:1;">
+                                <option value="">From</option>
+                            </select>
+                            <select id="road-end" style="flex:1;">
+                                <option value="">To</option>
+                            </select>
+                        </div>
+                        <button id="add-road-btn" class="secondary-btn mt-1">Add Road</button>
+                    </div>
+
+                    <div class="form-group mt-1">
+                        <label>Remove Location:</label>
+                        <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+                            <select id="remove-node-select" style="flex:1;">
+                                <option value="">Select</option>
+                            </select>
+                            <button id="remove-node-btn" class="danger-btn">Delete</button>
+                        </div>
                     </div>
                 </div>
 
@@ -105,15 +163,18 @@
             <div class="features-grid">
                 <div class="feature-card">
                     <h3>⚡ Dijkstra's Algorithm</h3>
-                    <p>Calculates the absolute shortest path using customized node weights reflecting realistic travel effort.</p>
+                    <p>Calculates the absolute shortest path using customized node weights reflecting realistic travel
+                        effort.</p>
                 </div>
                 <div class="feature-card">
                     <h3>🗺️ Real Geographic Tracking</h3>
-                    <p>Powered by Leaflet.js and OpenStreetMap, integrating abstract graph logic into real latitude and longitude positions.</p>
+                    <p>Powered by Leaflet.js and OpenStreetMap, integrating abstract graph logic into real latitude and
+                        longitude positions.</p>
                 </div>
                 <div class="feature-card">
                     <h3>💻 Zero Backend</h3>
-                    <p>Fully client-side operations. Computation is performed completely within your browser using JavaScript.</p>
+                    <p>Fully client-side operations. Computation is performed completely within your browser using
+                        JavaScript.</p>
                 </div>
             </div>
         </div>
@@ -130,9 +191,11 @@
     </footer>
 
     <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
     <!-- Custom Application Logic -->
     <script src="script.js"></script>
 </body>
+
 </html>
